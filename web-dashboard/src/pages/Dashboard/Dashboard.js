@@ -19,8 +19,7 @@ const Dashboard = ({ isSidebarOpen }) => {
     const navigate = useNavigate();
 
     // 1. Khởi tạo dữ liệu
-    useEffect(() => {
-        const initDashboard = async () => {
+    const initDashboard = async () => {
             try {
                 const res = await fetchGardens();
                 const list = res.data?.data || res.data || [];
@@ -38,32 +37,77 @@ const Dashboard = ({ isSidebarOpen }) => {
                 setLoading(false);
             }
         };
+
+    useEffect(() => {
         initDashboard();
     }, []);
 
     // 2. Thiết lập WebSocket lắng nghe thêm sự kiện tưới tiêu
-    useEffect(() => {
-        socketRef.current = io("http://localhost:3000", { transports: ["websocket"] });
+    // useEffect(() => {
+    //     socketRef.current = io("http://localhost:3000", { transports: ["websocket"] });
 
-        socketRef.current.on("server_send_sensor_data", (data) => {
+    //     socketRef.current.on("server_send_sensor_data", (data) => {
+    //         updateGardenState(data.gardenId, { sensors: data });
+    //     });
+
+    //     socketRef.current.on("server_send_device_status", (data) => {
+    //         updateGardenState(data.gardenId, { status: data });
+    //     });
+
+    //     // Lắng nghe sự kiện tưới tiêu để cập nhật bảng Log ngay lập tức
+    //     socketRef.current.on("irrigation_event", (data) => {
+    //         console.log("Irrigation event:", data);
+    //         // Tải lại nhật ký khi có sự kiện thay đổi (start/end)
+    //         fetchIrrigationData(data.gardenId);
+    //     });
+
+    //     return () => {
+    //         if (socketRef.current) socketRef.current.disconnect();
+    //     };
+    // }, []);
+    useEffect(() => {
+        const socket = io("http://localhost:3000", { 
+            transports: ["websocket", "polling"] 
+        });
+
+        const currentGardens = gardens; // Lưu bản sao để dùng trong callback
+
+        socket.on("connect", () => {
+            console.log("Dashboard connected:", socket.id);
+            currentGardens.forEach(g => {
+                socket.emit("garden:join", { gardenId: Number(g.id) });
+            });
+        });
+
+        // Lắng nghe MỌI sự kiện từ Server
+        socket.onAny((eventName, payload) => {
+            console.log(`🔍 [Socket Event]: ${eventName}`, payload);
+
+            // Nếu có bất kỳ sự thay đổi nào về thiết bị hoặc tưới tiêu, load lại Log cho vườn đó
+            if (eventName === "device:status" || eventName === "irrigation:update") {
+                if (payload.gardenId) {
+                    console.log("💧 Phát hiện thay đổi trạng thái, đang cập nhật nhật ký...");
+                    //fetchIrrigationData(payload.gardenId);
+                    initDashboard();
+                }
+            }
+        });
+
+        // Các listener cụ thể để cập nhật State nhanh (không cần load lại API)
+        socket.on("sensor:update", (data) => {
             updateGardenState(data.gardenId, { sensors: data });
         });
 
-        socketRef.current.on("server_send_device_status", (data) => {
+        socket.on("device:status", (data) => {
             updateGardenState(data.gardenId, { status: data });
         });
 
-        // Lắng nghe sự kiện tưới tiêu để cập nhật bảng Log ngay lập tức
-        socketRef.current.on("irrigation_event", (data) => {
-            console.log("Irrigation event:", data);
-            // Tải lại nhật ký khi có sự kiện thay đổi (start/end)
-            fetchIrrigationData(data.gardenId);
-        });
+        socketRef.current = socket;
 
         return () => {
             if (socketRef.current) socketRef.current.disconnect();
         };
-    }, []);
+    }, [gardens]); // Quan trọng: Re-run khi gardens list được tải xong để join room
 
     const fetchInitialDetail = async (id) => {
         try {
