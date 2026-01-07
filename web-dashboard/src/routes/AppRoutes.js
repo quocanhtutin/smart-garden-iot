@@ -16,7 +16,7 @@ import Sensor from '../pages/Sensor/Sensor';
 const AppRoutes = (props) => {
     return (
         <Routes>
-            <Route path="/" element={<PrivateRoute><Dashboard isSidebarOpen={props.isSidebarOpen} /></PrivateRoute>} />
+            <Route path="/" element={<UserRoute><Dashboard isSidebarOpen={props.isSidebarOpen} /></UserRoute>} />
             <Route path="/login" element={<Login />} />
             <Route path="/profile" element={<PrivateRoute><Account isSidebarOpen={props.isSidebarOpen}/></PrivateRoute>} />
             <Route path="/register" element={<Register />}/>

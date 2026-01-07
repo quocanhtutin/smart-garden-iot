@@ -46,7 +46,7 @@ const AdminRoute = ({ children }) => {
     // Kiểm tra role sau khi đã có dữ liệu từ API
     return user.role === "admin" 
         ? children 
-        : <Navigate to="/" replace />;
+        : <Navigate to="/users" replace />;
 };
 
 export default AdminRoute;

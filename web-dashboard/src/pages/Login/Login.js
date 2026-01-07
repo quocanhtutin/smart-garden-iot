@@ -39,7 +39,8 @@ const Login = () => {
                 localStorage.setItem("accessToken", tokens.accessToken);
                 localStorage.setItem("refreshToken", tokens.refreshToken);
                 localStorage.setItem("user", JSON.stringify(user));
-                navigate("/");
+                if(user.role === "user") navigate("/");
+                else navigate("/users");
             }
         } catch (error) {
             console.error("Login error:", error);
