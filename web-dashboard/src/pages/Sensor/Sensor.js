@@ -265,7 +265,7 @@ const Sensor = ({ isSidebarOpen }) => {
                                                 <th>Temp</th>
                                                 <th>Air Humid</th>
                                                 <th>Soil Humid</th>
-                                                <th className="rounded-end">Source</th>
+                                                <th>Light/Dark</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -277,7 +277,14 @@ const Sensor = ({ isSidebarOpen }) => {
                                                     <td><span className="fw-bold text-danger">{log.temperature}°C</span></td>
                                                     <td><span className="fw-bold text-primary">{log.airHumidity || log.airHumidity}%</span></td>
                                                     <td><span className="fw-bold text-success">{log.soilMoisture}%</span></td>
-                                                    <td><Badge bg="soft-info" className="text-info border border-info">Socket</Badge></td>
+                                                    <td>
+                                                        <Badge 
+                                                            bg={log.isDark ? "dark" : "warning"} 
+                                                            className={`text-${log.isDark ? "white" : "dark"} border`}
+                                                        >
+                                                            {log.isDark ? "Dark" : "Light"}
+                                                        </Badge>
+                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>
