@@ -37,7 +37,7 @@ const Sensor = ({ isSidebarOpen }) => {
             ]);
             
             setGarden(gardenRes.data?.data || gardenRes.data);
-            setLatestSensor(latestRes.data?.data || latestRes.data);
+            setLatestSensor(latestRes.data?.data[0]);
             setLogs(logsRes.data?.data || logsRes.data || []);
         } catch (e) {
             toast.error("Failed to sync with garden sensors");
