@@ -1,114 +1,214 @@
-import React, { useState } from 'react';
-import { Container, Row, Col, Card, Form } from 'react-bootstrap';
-import './Dashboard.scss';
+import React, { useState, useEffect, useRef } from "react";
+import { Container, Row, Col, Card, Badge, Spinner, Table } from "react-bootstrap";
+import { useNavigate } from "react-router-dom";
+import { io } from "socket.io-client";
+import { 
+    fetchGardens, 
+    fetchRealtimeGarden, 
+    fetchSensorLatest,
+    fetchIrrigationLog // Giả định bạn đã export hàm này từ UserServices
+} from "../../services/UserServices";
+import "./Dashboard.scss";
 
 const Dashboard = ({ isSidebarOpen }) => {
-    const [isAuto, setIsAuto] = useState(false);
+    const [gardens, setGardens] = useState([]);
+    const [gardenDetails, setGardenDetails] = useState({});
+    const [irrigationLogs, setIrrigationLogs] = useState([]); // Lưu trữ nhật ký tưới
+    const [loading, setLoading] = useState(true);
+    const socketRef = useRef(null);
+    const navigate = useNavigate();
 
-    const sensorData = [
-        { 
-            id: 1, 
-            title: 'TEMPERATURE', 
-            value: '28°C', 
-            icon: 'fa-thermometer-half', 
-            color: '#ff4757' 
-        },
-        { 
-            id: 2, 
-            title: 'SOIL MOISTURE', 
-            value: '65%', 
-            icon: 'fa-tint', 
-            color: '#133a94' 
-        },
-        { 
-            id: 3, 
-            title: 'LIGHT INTENSITY', 
-            value: '800 Lux', 
-            icon: 'fa-sun-o', 
-            color: '#ffa502' 
-        },
-        { 
-            id: 4, 
-            title: 'PUMP STATUS', 
-            value: isAuto ? 'Auto Running' : 'Off', 
-            icon: 'fa-shower', 
-            color: '#2ed573' 
-        },
-    ];
+    // 1. Khởi tạo dữ liệu
+    useEffect(() => {
+        const initDashboard = async () => {
+            try {
+                const res = await fetchGardens();
+                const list = res.data?.data || res.data || [];
+                setGardens(list);
+                
+                if (list.length > 0) {
+                    // Lấy dữ liệu cảm biến và nhật ký tưới cho vườn đầu tiên (hoặc tất cả)
+                    const firstGardenId = list[0].id;
+                    fetchInitialDetail(firstGardenId);
+                    fetchIrrigationData(firstGardenId);
+                }
+            } catch (e) {
+                console.error("Error loading gardens", e);
+            } finally {
+                setLoading(false);
+            }
+        };
+        initDashboard();
+    }, []);
+
+    // 2. Thiết lập WebSocket lắng nghe thêm sự kiện tưới tiêu
+    useEffect(() => {
+        socketRef.current = io("http://localhost:3000", { transports: ["websocket"] });
+
+        socketRef.current.on("server_send_sensor_data", (data) => {
+            updateGardenState(data.gardenId, { sensors: data });
+        });
+
+        socketRef.current.on("server_send_device_status", (data) => {
+            updateGardenState(data.gardenId, { status: data });
+        });
+
+        // Lắng nghe sự kiện tưới tiêu để cập nhật bảng Log ngay lập tức
+        socketRef.current.on("irrigation_event", (data) => {
+            console.log("Irrigation event:", data);
+            // Tải lại nhật ký khi có sự kiện thay đổi (start/end)
+            fetchIrrigationData(data.gardenId);
+        });
+
+        return () => {
+            if (socketRef.current) socketRef.current.disconnect();
+        };
+    }, []);
+
+    const fetchInitialDetail = async (id) => {
+        try {
+            const [statusRes, sensorRes] = await Promise.all([
+                fetchRealtimeGarden(id),
+                fetchSensorLatest(id)
+            ]);
+            updateGardenState(id, {
+                status: statusRes.data?.data || statusRes.data,
+                sensors: sensorRes.data?.data || sensorRes.data
+            });
+        } catch (e) {
+            console.error(`Error initial fetch for garden ${id}`);
+        }
+    };
+
+    // Hàm lấy nhật ký tưới tiêu
+    const fetchIrrigationData = async (id) => {
+        try {
+            const res = await fetchIrrigationLog(id);
+            const logs = res.data?.data || res.data || [];
+            setIrrigationLogs(logs.slice(0, 5)); // Chỉ lấy 5 bản ghi mới nhất cho Dashboard
+        } catch (e) {
+            console.error("Error fetching irrigation logs", e);
+        }
+    };
+
+    const updateGardenState = (gardenId, newData) => {
+        setGardenDetails(prev => ({
+            ...prev,
+            [gardenId]: { ...prev[gardenId], ...newData }
+        }));
+    };
+
+    if (loading) return (
+        <div className="d-flex justify-content-center align-items-center vh-100">
+            <Spinner animation="border" variant="success" />
+        </div>
+    );
 
     return (
         <div className={`dashboard-wrapper ${isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
-            <Container fluid className="py-4">
-                <div className="d-flex justify-content-between align-items-center mb-4 px-3">
-                    <h4 className="fw-bold text-secondary">Dashboard</h4>
-                    <div className="mode-toggle d-flex align-items-center bg-white p-2 rounded-pill shadow-sm">
-                        <span className={`me-2 fw-bold small ${!isAuto ? 'text-primary' : 'text-muted'}`}>
-                            Manual
-                        </span>
-                        <Form.Check 
-                            type="switch"
-                            id="mode-switch"
-                            checked={isAuto}
-                            onChange={() => setIsAuto(!isAuto)}
-                            className="custom-switch"
-                        />
-                        <span className={`ms-1 fw-bold small ${isAuto ? 'text-success' : 'text-muted'}`}>
-                            Auto
-                        </span>
+            <Container className="py-5">
+                <div className="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h2 className="fw-bold">My Smart Gardens</h2>
                     </div>
+                    <Badge bg="info" className="p-2">Live Connection: Active</Badge>
                 </div>
-                <Row className="g-4">
-                    {sensorData.map((item) => (
-                        <Col key={item.id} xs={12} md={6} xl={3}>
-                            <Card className="sensor-card border-0 shadow-sm h-100">
-                                <Card.Body className="d-flex align-items-center">
-                                    <div 
-                                        className="icon-box" 
-                                        style={{ backgroundColor: `${item.color}15`, color: item.color }}
-                                    >
-                                        <i className={`fa ${item.icon}`}></i>
-                                    </div>
-                                    <div className="ms-3">
-                                        <p className="text-muted mb-0 small fw-bold text-uppercase">
-                                            {item.title}
-                                        </p>
-                                        <h3 className="mb-0 fw-bold">{item.value}</h3>
-                                    </div>
-                                </Card.Body>
-                            </Card>
-                        </Col>
-                    ))}
+
+                {/* Phần 1: Các Card thông số vườn */}
+                <Row className="g-4 mb-5">
+                    {gardens.map((garden) => {
+                        const detail = gardenDetails[garden.id];
+                        const sensor = detail?.sensors;
+                        const status = detail?.status;
+
+                        return (
+                            <Col key={garden.id} xl={4} md={6}>
+                                <Card className="garden-card border-0 shadow-sm h-100 shadow-hover" 
+                                      onClick={() => navigate(`/sensors/${garden.id}`)}
+                                      style={{ cursor: 'pointer', transition: '0.3s' }}>
+                                    <Card.Body className="p-4">
+                                        <div className="d-flex justify-content-between align-items-center mb-3">
+                                            <h5 className="fw-bold m-0">{garden.gardenName}</h5>
+                                            <Badge bg={status?.isConnected ? "success" : "secondary"}>
+                                                {status?.isConnected ? "Online" : "Offline"}
+                                            </Badge>
+                                        </div>
+
+                                        <div className="sensor-brief d-flex justify-content-between bg-light rounded p-3 mb-3">
+                                            <div className="text-center">
+                                                <div className="small text-muted">Temp</div>
+                                                <div className="fw-bold text-danger">{sensor?.temperature ?? "--"}°C</div>
+                                            </div>
+                                            <div className="text-center">
+                                                <div className="small text-muted">Air Humid</div>
+                                                <div className="fw-bold text-primary">{sensor?.airHumidity ?? "--"}%</div>
+                                            </div>
+                                            <div className="text-center">
+                                                <div className="small text-muted">Soil</div>
+                                                <div className="fw-bold text-success">{sensor?.soilMoisture ?? "--"}%</div>
+                                            </div>
+                                        </div>
+
+                                        <div className="device-status d-flex gap-3">
+                                            {/* Hiển thị trạng thái tưới trực tiếp trên card */}
+                                            <div className={`status-tag ${status?.isPumpOn ? 'active' : ''}`}>
+                                                <i className={`fa fa-tint me-1 ${status?.isPumpOn ? 'fa-spin' : ''}`}></i> 
+                                                Pump: {status?.pumpStatus ? 'WATERING' : 'OFF'}
+                                            </div>
+                                            <div className={`status-tag ${status?.isLedOn ? 'active' : ''}`}>
+                                                <i className="fa fa-sun-o me-1"></i> LED: {status?.isLedOn ? 'ON' : 'OFF'}
+                                            </div>
+                                        </div>
+                                    </Card.Body>
+                                </Card>
+                            </Col>
+                        );
+                    })}
                 </Row>
-                <Row className="mt-4">
-                    <Col lg={6} xl={5}>
-                        <Card className="border-0 shadow-sm p-4 control-card">
-                            <h5 className="fw-bold mb-4">Device Control</h5>
-                            <div className="d-flex justify-content-between align-items-center">
-                                <div className="d-flex align-items-center">
-                                    <div className="pump-icon-bg me-3">
-                                        <i className="fa fa-tint text-primary"></i>
-                                    </div>
-                                    <span className="fw-medium text-secondary">Water Pump</span>
-                                </div>
-                                <button 
-                                    className={`btn btn-lg rounded-pill px-4 fw-bold shadow-sm transition-all 
-                                        ${isAuto ? 'btn-light text-muted cursor-not-allowed' : 'btn-primary'}`}
-                                    disabled={isAuto}
-                                >
-                                    {isAuto ? 'System Automatic' : 'Pump Now'}
-                                </button>
-                            </div>
-                            {isAuto && (
-                                <div className="mt-3 p-2 bg-light rounded text-center">
-                                    <small className="text-primary italic">
-                                        <i className="fa fa-info-circle me-1"></i>
-                                        Auto mode is on. 
-                                    </small>
-                                </div>
+
+                {/* Phần 2: Bảng Nhật ký tưới tiêu gần đây */}
+                <h4 className="fw-bold mb-3">Recent Irrigation Logs</h4>
+                <Card className="border-0 shadow-sm rounded-4 overflow-hidden">
+                    <Table hover responsive className="align-middle mb-0">
+                        <thead className="bg-light">
+                            <tr className="text-muted small">
+                                <th className="ps-4">START TIME</th>
+                                <th>MODE</th>
+                                <th>DURATION</th>
+                                <th>STATUS</th>
+                                <th className="pe-4">NOTES</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {irrigationLogs.length > 0 ? (
+                                irrigationLogs.map((log) => (
+                                    <tr key={log.id}>
+                                        <td className="ps-4">
+                                            <div className="fw-bold">{new Date(log.startTime).toLocaleTimeString()}</div>
+                                            <div className="text-muted x-small">{new Date(log.startTime).toLocaleDateString()}</div>
+                                        </td>
+                                        <td>
+                                            <Badge bg="soft-primary" className="text-primary border border-primary">
+                                                {log.mode}
+                                            </Badge>
+                                        </td>
+                                        <td>{log.duration ? `${log.duration}s` : "---"}</td>
+                                        <td>
+                                            <span className={`fw-bold ${log.status === 'completed' ? 'text-success' : 'text-warning'}`}>
+                                                ● {log.status.toUpperCase()}
+                                            </span>
+                                        </td>
+                                        <td className="text-muted pe-4 small">{log.note || "System Auto"}</td>
+                                    </tr>
+                                ))
+                            ) : (
+                                <tr>
+                                    <td colSpan="5" className="text-center py-4 text-muted">No irrigation records found.</td>
+                                </tr>
                             )}
-                        </Card>
-                    </Col>
-                </Row>
+                        </tbody>
+                    </Table>
+                </Card>
             </Container>
         </div>
     );
