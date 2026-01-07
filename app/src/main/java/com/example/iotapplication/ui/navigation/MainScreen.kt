@@ -1,5 +1,7 @@
 package com.example.iotapplication.ui.navigation
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -11,10 +13,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import com.example.iotapplication.data.remote.ApiClient
+import com.example.iotapplication.data.remote.api.ApiService
 import com.example.iotapplication.ui.components.AppTopBar
 import com.example.iotapplication.ui.components.NotificationSheet
+import com.example.iotapplication.ui.viewmodel.GardenViewModel
+import com.example.iotapplication.ui.viewmodel.GardenViewModelFactory
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun MainScreen(onLogout: () -> Unit) {
     var showNotification by remember { mutableStateOf(false) }
@@ -23,20 +34,25 @@ fun MainScreen(onLogout: () -> Unit) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
+    val context = LocalContext.current
+    val api = remember { ApiClient.create(context) }
+    val factory = remember { GardenViewModelFactory(api) }
+    val viewModel: GardenViewModel = viewModel(factory = factory)
     val items = listOf(
-        BottomNavItem.Dashboard,
-        BottomNavItem.Control,
-        BottomNavItem.History,
-        BottomNavItem.Settings,
+        BottomNavItem.Gardens,
         BottomNavItem.Profile
     )
 
+    val isDetail = currentRoute?.startsWith("gardens") == true
+
     Scaffold(
         topBar = {
-            AppTopBar(
-                showBell = currentRoute != BottomNavItem.Profile.route,
-                onBellClick = { showNotification = true }
-            )
+            if (isDetail) {
+                AppTopBar(
+                    showBell = currentRoute != BottomNavItem.Profile.route,
+                    onBellClick = { showNotification = true }
+                )
+            }
         },
         bottomBar = {
             NavigationBar {
@@ -71,7 +87,9 @@ fun MainScreen(onLogout: () -> Unit) {
         Box(Modifier.padding(padding)) {
             AppMainNav(
                 navController = navController,
-                onLogout = onLogout
+                onLogout = onLogout,
+                viewModel = viewModel,
+                api = api
             )
 
             NotificationSheet(
@@ -82,25 +100,46 @@ fun MainScreen(onLogout: () -> Unit) {
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun AppMainNav(
     navController: NavHostController,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    viewModel: GardenViewModel,
+    api: ApiService
 ) {
     NavHost(
         navController = navController,
-        startDestination = BottomNavItem.Dashboard.route
-    ) {
-        composable("dashboard") { DashboardScreen() }
-        composable("control") { ControlScreen() }
-        composable("history") { HistoryScreen() }
-        composable("settings", ) { SettingsScreen() }
+        startDestination = BottomNavItem.Gardens.route
+    ){
+        composable("gardens") {
+            GardenListScreen(
+            viewModel = viewModel,
+                onGardenClick = { garden ->
+                    navController.navigate("garden_detail/${garden.id}")
+                }
+
+            )
+        }
         composable("profile") {
             ProfileScreen(
+                api=api,
                 onLogout = onLogout
             )
-
         }
+        composable(
+            route = "garden_detail/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.IntType })
+        ) { backStack ->
+            val gardenId = backStack.arguments!!.getInt("id")
+            GardenDetailScreen(
+                gardenId = gardenId,
+                api = api,
+                navController = navController
+            )
+        }
+
+
     }
 }
 
