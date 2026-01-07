@@ -24,6 +24,7 @@ const Sensor = ({ isSidebarOpen }) => {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
+    const [pumpDuration, setPumpDuration] = useState(60); // Mặc định 60 giây
 
     // 1. Tải dữ liệu ban đầu qua API
     const loadInitialData = useCallback(async (showLoading = true) => {
@@ -111,19 +112,41 @@ const Sensor = ({ isSidebarOpen }) => {
     }, [id]);
 
     // 3. Hàm điều khiển thiết bị
+    // const handleDeviceControl = async (device, currentStatus) => {
+    //     try {
+    //         setActionLoading(true);
+    //         const newStatus = !currentStatus;
+            
+    //         if (device === 'pump') {
+    //             newStatus ? await turnOnPump(id) : await turnOffPump(id);
+    //         } else {
+    //             newStatus ? await turnOnLED(id) : await turnOffLED(id);
+    //         }
+    //         toast.info(`Command sent to ${device}... waiting for device response`);
+    //     } catch (e) {
+    //         toast.error(`Control command failed for ${device}`);
+    //     } finally {
+    //         setActionLoading(false);
+    //     }
+    // };
     const handleDeviceControl = async (device, currentStatus) => {
         try {
             setActionLoading(true);
             const newStatus = !currentStatus;
             
             if (device === 'pump') {
-                newStatus ? await turnOnPump(id) : await turnOffPump(id);
+                if (newStatus) {
+                    // Khi BẬT thì gửi kèm thời gian
+                    await turnOnPump(id, pumpDuration); 
+                    toast.info(`Sending ON command for ${pumpDuration}s...`);
+                } else {
+                    await turnOffPump(id);
+                }
             } else {
                 newStatus ? await turnOnLED(id) : await turnOffLED(id);
             }
-            toast.info(`Command sent to ${device}... waiting for device response`);
         } catch (e) {
-            toast.error(`Control command failed for ${device}`);
+            toast.error(e.response?.data?.message || `Control command failed`);
         } finally {
             setActionLoading(false);
         }
@@ -196,11 +219,20 @@ const Sensor = ({ isSidebarOpen }) => {
                                 <h5 className="mb-0 fw-bold"><i className="fa fa-sliders me-2"></i>Live Controls</h5>
                             </div>
                             <Card.Body className="p-4">
+                                {/* <ControlSwitch 
+                                    label="Water Pump" icon="tint" color="info"
+                                    active={latestSensor?.isPumpOn}
+                                    loading={actionLoading}
+                                    onToggle={() => handleDeviceControl('pump', latestSensor?.isPumpOn)}
+                                /> */}
                                 <ControlSwitch 
                                     label="Water Pump" icon="tint" color="info"
                                     active={latestSensor?.isPumpOn}
                                     loading={actionLoading}
                                     onToggle={() => handleDeviceControl('pump', latestSensor?.isPumpOn)}
+                                    showInput={true} // Chỉ hiện input cho máy bơm
+                                    duration={pumpDuration}
+                                    setDuration={setPumpDuration}
                                 />
                                 <hr className="my-4" />
                                 <ControlSwitch 
@@ -278,7 +310,30 @@ const SensorMetricCard = ({ icon, color, label, value, unit, subtext }) => (
     </Col>
 );
 
-const ControlSwitch = ({ label, icon, active, color, onToggle, loading }) => (
+// const ControlSwitch = ({ label, icon, active, color, onToggle, loading }) => (
+//     <div className="d-flex align-items-center justify-content-between">
+//         <div className="d-flex align-items-center">
+//             <div className={`p-2 bg-light rounded-3 text-${color} me-3`}>
+//                 <i className={`fa fa-${icon} fs-5`}></i>
+//             </div>
+//             <div>
+//                 <div className="fw-bold small">{label}</div>
+//                 <div className={`small fw-bold text-${active ? color : 'muted'}`}>
+//                     {active ? "ON" : "OFF"}
+//                 </div>
+//             </div>
+//         </div>
+//         <Button 
+//             variant={active ? color : "outline-secondary"} 
+//             className="rounded-pill px-4 btn-sm shadow-sm"
+//             onClick={onToggle}
+//             disabled={loading}
+//         >
+//             {loading ? <Spinner size="sm" /> : (active ? "Turn Off" : "Turn On")}
+//         </Button>
+//     </div>
+// );
+const ControlSwitch = ({ label, icon, active, color, onToggle, loading, showInput, duration, setDuration }) => (
     <div className="d-flex align-items-center justify-content-between">
         <div className="d-flex align-items-center">
             <div className={`p-2 bg-light rounded-3 text-${color} me-3`}>
@@ -291,14 +346,30 @@ const ControlSwitch = ({ label, icon, active, color, onToggle, loading }) => (
                 </div>
             </div>
         </div>
-        <Button 
-            variant={active ? color : "outline-secondary"} 
-            className="rounded-pill px-4 btn-sm shadow-sm"
-            onClick={onToggle}
-            disabled={loading}
-        >
-            {loading ? <Spinner size="sm" /> : (active ? "Turn Off" : "Turn On")}
-        </Button>
+        
+        <div className="d-flex align-items-center gap-2">
+            {/* Nếu là máy bơm và đang tắt, cho phép nhập thời gian */}
+            {showInput && !active && (
+                <div className="d-flex align-items-center border rounded-pill px-2 bg-white">
+                    <input 
+                        type="number" 
+                        value={duration}
+                        onChange={(e) => setDuration(Number(e.target.value))}
+                        style={{ width: '50px', border: 'none', textAlign: 'center', outline: 'none', fontSize: '12px' }}
+                    />
+                    <span className="text-muted small">s</span>
+                </div>
+            )}
+            
+            <Button 
+                variant={active ? color : "outline-secondary"} 
+                className="rounded-pill px-3 btn-sm shadow-sm"
+                onClick={onToggle}
+                disabled={loading}
+            >
+                {loading ? <Spinner size="sm" /> : (active ? "Turn Off" : "Turn On")}
+            </Button>
+        </div>
     </div>
 );
 

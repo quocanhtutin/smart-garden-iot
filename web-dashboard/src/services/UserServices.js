@@ -92,8 +92,8 @@ const deleteGarden = (id) => {
     return axios.delete(`/api/gardens/${id}`);
 };
 
-const turnOnPump = (id) => {
-    return axios.post(`/api/gardens/${id}/pump/on`);
+const turnOnPump = (id, duration) => {
+    return axios.post(`/api/gardens/${id}/pump/on`, { durationSeconds: duration });
 };
 
 const turnOffPump = (id) => {
