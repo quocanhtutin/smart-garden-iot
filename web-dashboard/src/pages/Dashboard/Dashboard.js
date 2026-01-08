@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Container, Row, Col, Card, Badge, Spinner, Table } from "react-bootstrap";
+import { Container, Row, Col, Card, Badge, Spinner, Table, Button } from "react-bootstrap";
 import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import {
@@ -79,29 +79,6 @@ const Dashboard = ({ isSidebarOpen }) => {
         initDashboard();
     }, []);
 
-    // 2. Thiết lập WebSocket lắng nghe thêm sự kiện tưới tiêu
-    // useEffect(() => {
-    //     socketRef.current = io("http://localhost:3000", { transports: ["websocket"] });
-
-    //     socketRef.current.on("server_send_sensor_data", (data) => {
-    //         updateGardenState(data.gardenId, { sensors: data });
-    //     });
-
-    //     socketRef.current.on("server_send_device_status", (data) => {
-    //         updateGardenState(data.gardenId, { status: data });
-    //     });
-
-    //     // Lắng nghe sự kiện tưới tiêu để cập nhật bảng Log ngay lập tức
-    //     socketRef.current.on("irrigation_event", (data) => {
-    //         console.log("Irrigation event:", data);
-    //         // Tải lại nhật ký khi có sự kiện thay đổi (start/end)
-    //         fetchIrrigationData(data.gardenId);
-    //     });
-
-    //     return () => {
-    //         if (socketRef.current) socketRef.current.disconnect();
-    //     };
-    // }, []);
     useEffect(() => {
         const socket = io("http://localhost:3000", {
             transports: ["websocket", "polling"]
@@ -182,7 +159,11 @@ const Dashboard = ({ isSidebarOpen }) => {
                     <div>
                         <h2 className="fw-bold">My Smart Gardens</h2>
                     </div>
-                    <Badge bg="info" className="p-2">Live Connection: Active</Badge>
+                    <div className="d-flex gap-2">
+                        <Button variant="primary" className="rounded-pill px-4 shadow-sm" onClick={() => initDashboard()}>
+                            <i className="fa fa-refresh me-2"></i> Full Sync
+                        </Button>
+                    </div>
                 </div>
 
                 {/* Phần 1: Các Card thông số vườn */}

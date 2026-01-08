@@ -184,12 +184,24 @@ const Garden = ({ isSidebarOpen }) => {
                             <Form.Text className="text-muted small">Must match your hardware ID to receive data.</Form.Text>
                         </Form.Group>
                         <Row>
-                            <Col md={12}>
+                            <Col md={6}>
                                 <Form.Group className="mb-3">
                                     <Form.Label className="small fw-bold">Plant Type</Form.Label>
                                     <Form.Select value={selectedGarden.plantId} onChange={(e) => setSelectedGarden({...selectedGarden, plantId: e.target.value})}>
                                         <option value="">Select...</option>
                                         {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    </Form.Select>
+                                </Form.Group>
+                            </Col>
+                            <Col md={6}>
+                                <Form.Group className="mb-3">
+                                    <Form.Label className="small fw-bold">Irrigation Mode</Form.Label>
+                                    <Form.Select 
+                                        value={selectedGarden.irrigationMode} 
+                                        onChange={(e) => setSelectedGarden({...selectedGarden, irrigationMode: e.target.value})}
+                                    >
+                                        <option value="manual">Manual</option>
+                                        <option value="auto">Auto</option>
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
