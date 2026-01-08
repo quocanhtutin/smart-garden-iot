@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from "react";
 import { Container, Row, Col, Card, Badge, Spinner, Table } from "react-bootstrap";
 import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
-import { 
-    fetchGardens, 
-    fetchRealtimeGarden, 
+import {
+    fetchGardens,
+    fetchRealtimeGarden,
     fetchSensorLatest,
     fetchIrrigationLog // Giả định bạn đã export hàm này từ UserServices
 } from "../../services/UserServices";
@@ -20,23 +20,60 @@ const Dashboard = ({ isSidebarOpen }) => {
 
     // 1. Khởi tạo dữ liệu
     const initDashboard = async () => {
-            try {
-                const res = await fetchGardens();
-                const list = res.data?.data || res.data || [];
-                setGardens(list);
-                
-                if (list.length > 0) {
-                    // Lấy dữ liệu cảm biến và nhật ký tưới cho vườn đầu tiên (hoặc tất cả)
-                    const firstGardenId = list[0].id;
-                    fetchInitialDetail(firstGardenId);
-                    fetchIrrigationData(firstGardenId);
-                }
-            } catch (e) {
-                console.error("Error loading gardens", e);
-            } finally {
-                setLoading(false);
+        try {
+            const res = await fetchGardens();
+            const list = res.data?.data || res.data || [];
+            // Sort theo ID để ổn định vị trí, hoặc createAt
+            list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            setGardens(list);
+
+            if (list.length > 0) {
+                // Lấy chi tiết cảm biến cho garden đầu tiên (để hiển thị các thẻ chi tiết)
+                fetchInitialDetail(list[0].id);
+
+                // Lấy logs của TẤT CẢ các vườn
+                fetchAllIrrigationData(list);
+            } else {
+                setIrrigationLogs([]);
             }
-        };
+        } catch (e) {
+            console.error("Error loading gardens", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchAllIrrigationData = async (gardenList) => {
+        try {
+            // Tạo 1 map id -> gardenName để hiển thị
+            const gardenNames = {};
+            gardenList.forEach(g => gardenNames[g.id] = g.gardenName);
+
+            // Fetch song song
+            const promises = gardenList.map(g => fetchIrrigationLog(g.id));
+            const results = await Promise.all(promises);
+
+            let allLogs = [];
+            results.forEach((res, index) => {
+                const logs = res.data?.data || res.data || [];
+                // Gắn thêm gardenName vào log
+                const gardenId = gardenList[index].id;
+                const logsWithGarden = logs.map(log => ({
+                    ...log,
+                    gardenName: gardenNames[gardenId] || `Garden #${gardenId}`
+                }));
+                allLogs = [...allLogs, ...logsWithGarden];
+            });
+
+            // Sort tổng hợp: Mới nhất trước
+            allLogs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+
+            // Chỉ lấy 7 logs mới nhất cho đẹp
+            setIrrigationLogs(allLogs.slice(0, 7));
+        } catch (e) {
+            console.error("Error fetching all irrigation logs", e);
+        }
+    };
 
     useEffect(() => {
         initDashboard();
@@ -66,8 +103,8 @@ const Dashboard = ({ isSidebarOpen }) => {
     //     };
     // }, []);
     useEffect(() => {
-        const socket = io("http://localhost:3000", { 
-            transports: ["websocket", "polling"] 
+        const socket = io("http://localhost:3000", {
+            transports: ["websocket", "polling"]
         });
 
         const currentGardens = gardens; // Lưu bản sao để dùng trong callback
@@ -81,19 +118,18 @@ const Dashboard = ({ isSidebarOpen }) => {
 
         // Lắng nghe MỌI sự kiện từ Server
         socket.onAny((eventName, payload) => {
-            console.log(`🔍 [Socket Event]: ${eventName}`, payload);
-
-            // Nếu có bất kỳ sự thay đổi nào về thiết bị hoặc tưới tiêu, load lại Log cho vườn đó
-            if (eventName === "device:status" || eventName === "irrigation:update") {
+            // Nếu có bất kỳ sự thay đổi nào về thiết bị hoặc tưới tiêu, load lại Log
+            if (eventName === "device:status" || eventName === "irrigation:update" || eventName.includes("pump")) {
                 if (payload.gardenId) {
-                    console.log("💧 Phát hiện thay đổi trạng thái, đang cập nhật nhật ký...");
-                    //fetchIrrigationData(payload.gardenId);
+                    console.log("💧 Event trigger:", eventName);
+                    // Reload lại toàn bộ để cập nhật bảng Log mới nhất
+                    // (Lưu ý: Cách này hơi thô nhưng đảm bảo đúng dữ liệu cho bảng tổng hợp)
                     initDashboard();
                 }
             }
         });
 
-        // Các listener cụ thể để cập nhật State nhanh (không cần load lại API)
+        // Các listener cụ thể để cập nhật State nhanh cho Card (không cần load lại API list)
         socket.on("sensor:update", (data) => {
             updateGardenState(data.gardenId, { sensors: data });
         });
@@ -124,16 +160,7 @@ const Dashboard = ({ isSidebarOpen }) => {
         }
     };
 
-    // Hàm lấy nhật ký tưới tiêu
-    const fetchIrrigationData = async (id) => {
-        try {
-            const res = await fetchIrrigationLog(id);
-            const logs = res.data?.data || res.data || [];
-            setIrrigationLogs(logs.slice(0, 5)); // Chỉ lấy 5 bản ghi mới nhất cho Dashboard
-        } catch (e) {
-            console.error("Error fetching irrigation logs", e);
-        }
-    };
+
 
     const updateGardenState = (gardenId, newData) => {
         setGardenDetails(prev => ({
@@ -167,9 +194,9 @@ const Dashboard = ({ isSidebarOpen }) => {
 
                         return (
                             <Col key={garden.id} xl={4} md={6}>
-                                <Card className="garden-card border-0 shadow-sm h-100 shadow-hover" 
-                                      onClick={() => navigate(`/sensors/${garden.id}`)}
-                                      style={{ cursor: 'pointer', transition: '0.3s' }}>
+                                <Card className="garden-card border-0 shadow-sm h-100 shadow-hover"
+                                    onClick={() => navigate(`/sensors/${garden.id}`)}
+                                    style={{ cursor: 'pointer', transition: '0.3s' }}>
                                     <Card.Body className="p-4">
                                         <div className="d-flex justify-content-between align-items-center mb-3">
                                             <h5 className="fw-bold m-0">{garden.gardenName}</h5>
@@ -196,7 +223,7 @@ const Dashboard = ({ isSidebarOpen }) => {
                                         <div className="device-status d-flex gap-3">
                                             {/* Hiển thị trạng thái tưới trực tiếp trên card */}
                                             <div className={`status-tag ${status?.isPumpOn ? 'active' : ''}`}>
-                                                <i className={`fa fa-tint me-1 ${status?.isPumpOn ? 'fa-spin' : ''}`}></i> 
+                                                <i className={`fa fa-tint me-1 ${status?.isPumpOn ? 'fa-spin' : ''}`}></i>
                                                 Pump: {status?.pumpStatus ? 'WATERING' : 'OFF'}
                                             </div>
                                             <div className={`status-tag ${status?.isLedOn ? 'active' : ''}`}>
@@ -217,6 +244,7 @@ const Dashboard = ({ isSidebarOpen }) => {
                         <thead className="bg-light">
                             <tr className="text-muted small">
                                 <th className="ps-4">START TIME</th>
+                                <th>GARDEN</th>
                                 <th>MODE</th>
                                 <th>DURATION</th>
                                 <th>STATUS</th>
@@ -230,6 +258,9 @@ const Dashboard = ({ isSidebarOpen }) => {
                                         <td className="ps-4">
                                             <div className="fw-bold">{new Date(log.startTime).toLocaleTimeString()}</div>
                                             <div className="text-muted x-small">{new Date(log.startTime).toLocaleDateString()}</div>
+                                        </td>
+                                        <td>
+                                            <span className="fw-bold text-dark small">{log.gardenName}</span>
                                         </td>
                                         <td>
                                             <Badge bg="soft-primary" className="text-primary border border-primary">
