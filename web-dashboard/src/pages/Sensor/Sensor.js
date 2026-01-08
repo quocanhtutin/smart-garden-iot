@@ -54,11 +54,8 @@ const Sensor = ({ isSidebarOpen }) => {
 
     
     useEffect(() => {
-        // 1. Khởi tạo socket
         const socket = io("http://localhost:3000", {
-
             transports: ["websocket", "polling"],
-
             reconnectionAttempts: 5
 
         });
@@ -71,7 +68,6 @@ const Sensor = ({ isSidebarOpen }) => {
         });
 
         socket.on("sensor:update", (newData) => {
-
             console.log("Nhận dữ liệu Sensor real-time:", newData);
             setLatestSensor(newData);
             setLogs(prevLogs => {
@@ -89,7 +85,6 @@ const Sensor = ({ isSidebarOpen }) => {
         socket.on("device:status", (statusData) => {
             console.log("📱 Trạng thái thiết bị thay đổi:", statusData);
             if (Number(statusData.gardenId) === currentId) {
-
                 setLatestSensor(prev => ({ ...prev, ...statusData }));
             }
         });
@@ -101,7 +96,7 @@ const Sensor = ({ isSidebarOpen }) => {
             }
         });
 
-        socket.on("connect_error", (err) => console.error("🔴 Socket Error:", err));
+        socket.on("connect_error", (err) => console.error("Socket Error:", err));
         socketRef.current = socket;
         return () => {
             if (socketRef.current) {
@@ -153,6 +148,31 @@ const Sensor = ({ isSidebarOpen }) => {
             }
         } catch (e) {
             toast.error(e.response?.data?.message || `Control command failed`);
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleSwitchMode = async (newMode) => {
+        if (!garden) return;
+        try {
+            setActionLoading(true);
+            const payload = {
+                gardenName: garden.gardenName.trim(),
+                description: garden.description || "",
+                plantId: garden.plantId ? Number(garden.plantId) : null,
+                irrigationMode: newMode, // Chế độ mới
+                deviceCode: garden.deviceCode ? garden.deviceCode.trim() : null
+            };
+
+            await updateGarden(id, payload);
+            
+            // Cập nhật lại state local để UI thay đổi ngay lập tức
+            setGarden(prev => ({ ...prev, irrigationMode: newMode }));
+            toast.success(`Switched to ${newMode.toUpperCase()} mode!`);
+        } catch (e) {
+            toast.error("Failed to switch irrigation mode");
+            console.error(e);
         } finally {
             setActionLoading(false);
         }
@@ -251,9 +271,7 @@ const Sensor = ({ isSidebarOpen }) => {
                                     loading={actionLoading}
                                     onToggle={() => handleDeviceControl('led', latestSensor?.isLedOn)}
                                 />
-                                
-                                {/* Hiển thị thông tin trạng thái bổ sung */}
-                                <div className="mt-4 p-3 bg-light rounded-3">
+                                <div className="mt-4 p-3 bg-light rounded-3 border">
                                     <div className="d-flex justify-content-between x-small fw-bold mb-2 text-muted uppercase">
                                         <span>Current Status</span>
                                         <span>{latestSensor?.isPumpOn ? 'Irrigating...' : 'Standby'}</span>
@@ -263,7 +281,35 @@ const Sensor = ({ isSidebarOpen }) => {
                                         variant={latestSensor?.isPumpOn ? "info" : "success"} 
                                         now={100} 
                                         style={{height: '4px'}} 
+                                        className="mb-3"
                                     />
+                                    <div className="pt-2 border-top">
+                                        <div className="d-flex align-items-center justify-content-between">
+                                            <span className="x-small fw-bold text-muted uppercase">Irrigation Mode</span>
+                                            <div className="btn-group shadow-sm" style={{ borderRadius: '20px', overflow: 'hidden' }}>
+                                                <Button 
+                                                    variant={garden?.irrigationMode === 'manual' ? "primary" : "white"} 
+                                                    size="sm"
+                                                    className="x-small border-0 px-3"
+                                                    onClick={() => garden?.irrigationMode !== 'manual' && handleSwitchMode('manual')}
+                                                    disabled={actionLoading}
+                                                    style={{ fontSize: '11px', fontWeight: 'bold' }}
+                                                >
+                                                    MANUAL
+                                                </Button>
+                                                <Button 
+                                                    variant={garden?.irrigationMode === 'auto' ? "primary" : "white"} 
+                                                    size="sm"
+                                                    className="x-small border-0 px-3"
+                                                    onClick={() => garden?.irrigationMode !== 'auto' && handleSwitchMode('auto')}
+                                                    disabled={actionLoading}
+                                                    style={{ fontSize: '11px', fontWeight: 'bold' }}
+                                                >
+                                                    AUTO
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </Card.Body>
                         </Card>

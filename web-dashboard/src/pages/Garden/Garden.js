@@ -12,13 +12,23 @@ const Garden = ({ isSidebarOpen }) => {
     const [isEditMode, setIsEditMode] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
 
+    // const [selectedGarden, setSelectedGarden] = useState({
+    //     gardenName: "",
+    //     description: "",
+    //     plantId: "",
+    //     irrigationMode: "manual"
+    // });
+
     const [selectedGarden, setSelectedGarden] = useState({
         gardenName: "",
         description: "",
         plantId: "",
-        irrigationMode: "manual"
+        irrigationMode: "manual",
+        autoIrrigationThreshold: 30, 
+        autoIrrigationDuration: 60,
+        ledAutoMode: false,
+        deviceCode: ""
     });
-
     useEffect(() => { loadData(); }, []);
 
     const loadData = async () => {
@@ -31,43 +41,88 @@ const Garden = ({ isSidebarOpen }) => {
         finally { setLoading(false); }
     };
 
-    const handleSubmit = async () => {
-        if (!selectedGarden.gardenName) return toast.warning("Garden name is required");
+    // const handleSubmit = async () => {
+    //     if (!selectedGarden.gardenName) return toast.warning("Garden name is required");
         
-        try {
-            setActionLoading(true);
-            
-            // Tạo payload sạch theo đúng CreateGardenDto của Backend
-            const payload = {
-                gardenName: selectedGarden.gardenName.trim(),
-                description: selectedGarden.description || "",
-                plantId: selectedGarden.plantId ? Number(selectedGarden.plantId) : null,
-                irrigationMode: selectedGarden.irrigationMode || "manual",
-                // Thêm deviceCode vào đây để Backend tìm/tạo Device
-                deviceCode: selectedGarden.deviceCode ? selectedGarden.deviceCode.trim() : null
-            };
+    //     try {
+    //         setActionLoading(true);
+    //         const payload = {
+    //             gardenName: selectedGarden.gardenName.trim(),
+    //             description: selectedGarden.description || "",
+    //             plantId: selectedGarden.plantId ? Number(selectedGarden.plantId) : null,
+    //             irrigationMode: selectedGarden.irrigationMode || "manual",
+    //             // Thêm deviceCode vào đây để Backend tìm/tạo Device
+    //             deviceCode: selectedGarden.deviceCode ? selectedGarden.deviceCode.trim() : null
+    //         };
 
-            if (isEditMode) {
-                // Khi cập nhật, tùy vào Backend có cho đổi deviceCode không, 
-                // thông thường payload update cũng giống create nhưng có thêm ID
-                await updateGarden(selectedGarden.id, payload);
-                toast.success("Garden updated successfully!");
-            } else {
-                // Tạo mới vườn kèm theo deviceCode (nếu có)
-                await createNewGarden(payload);
-                toast.success("New garden created successfully!");
-            }
+    //         if (isEditMode) {
+    //             await updateGarden(selectedGarden.id, payload);
+    //             toast.success("Garden updated successfully!");
+    //         } else {
+    //             await createNewGarden(payload);
+    //             toast.success("New garden created successfully!");
+    //         }
             
-            setShowModal(false);
-            loadData();
-        } catch (e) {
-            // Hiển thị lỗi Conflict (409) hoặc Validation (400) từ Backend
-            const msg = e.response?.data?.message;
-            toast.error(Array.isArray(msg) ? msg[0] : msg || "Operation failed");
-        } finally {
-            setActionLoading(false);
+    //         setShowModal(false);
+    //         loadData();
+    //     } catch (e) {
+    //         // Hiển thị lỗi Conflict (409) hoặc Validation (400) từ Backend
+    //         const msg = e.response?.data?.message;
+    //         toast.error(Array.isArray(msg) ? msg[0] : msg || "Operation failed");
+    //     } finally {
+    //         setActionLoading(false);
+    //     }
+    // };
+
+    const handleSubmit = async () => {
+    if (!selectedGarden.gardenName) return toast.warning("Garden name is required");
+    
+    try {
+        setActionLoading(true);
+        
+        // 1. Tạo Payload cơ bản (Chỉ chứa các trường Backend CreateDTO chắc chắn chấp nhận)
+        const basePayload = {
+            gardenName: selectedGarden.gardenName.trim(),
+            description: selectedGarden.description || "",
+            plantId: selectedGarden.plantId ? Number(selectedGarden.plantId) : null,
+            irrigationMode: selectedGarden.irrigationMode,
+            deviceCode: selectedGarden.deviceCode ? selectedGarden.deviceCode.trim() : null
+        };
+
+        // 2. Tạo Payload bổ sung (Các trường gây lỗi ở Create nhưng chạy được ở Update)
+        const extraPayload = {
+            autoIrrigationThreshold: Number(selectedGarden.autoIrrigationThreshold),
+            autoIrrigationDuration: Number(selectedGarden.autoIrrigationDuration),
+            ledAutoMode: selectedGarden.ledAutoMode
+        };
+
+        if (isEditMode) {
+            // Trường hợp Edit: Gửi tất cả cùng lúc (vì update không bị chặn DTO khắt khe)
+            await updateGarden(selectedGarden.id, { ...basePayload, ...extraPayload });
+            toast.success("Garden updated!");
+        } else {
+            // TRƯỜNG HỢP TẠO MỚI (Lách luật):
+            // Bước A: Gọi create với payload cơ bản
+            const response = await createNewGarden(basePayload);
+            const newGardenId = response.data?.id || response.data?.data?.id;
+
+            // Bước B: Nếu là chế độ Auto, gọi tiếp Update để ghi đè Threshold/Duration/LED
+            if (newGardenId && (selectedGarden.irrigationMode === 'auto' || selectedGarden.ledAutoMode)) {
+                await updateGarden(newGardenId, extraPayload);
+            }
+            toast.success("New garden created and configured!");
         }
-    };
+        
+        setShowModal(false);
+        loadData();
+    } catch (e) {
+        console.error("Error details:", e.response?.data);
+        const msg = e.response?.data?.message;
+        toast.error(Array.isArray(msg) ? msg[0] : msg || "Operation failed");
+    } finally {
+        setActionLoading(false);
+    }
+};
 
     const handleDelete = async (id) => {
         try {
@@ -166,11 +221,17 @@ const Garden = ({ isSidebarOpen }) => {
                 </Modal.Header>
                 <Modal.Body className="px-4">
                     <Form>
+                        {/* Garden Name */}
                         <Form.Group className="mb-3">
                             <Form.Label className="small fw-bold">Garden Name</Form.Label>
-                            <Form.Control type="text" value={selectedGarden.gardenName}
-                                onChange={(e) => setSelectedGarden({...selectedGarden, gardenName: e.target.value})} />
+                            <Form.Control 
+                                type="text" 
+                                value={selectedGarden.gardenName}
+                                onChange={(e) => setSelectedGarden({...selectedGarden, gardenName: e.target.value})} 
+                            />
                         </Form.Group>
+
+                        {/* Device Code */}
                         <Form.Group className="mb-3">
                             <Form.Label className="small fw-bold text-primary">
                                 <i className="fa fa-microchip me-1"></i> Device Code (ESP32 ID)
@@ -181,18 +242,26 @@ const Garden = ({ isSidebarOpen }) => {
                                 value={selectedGarden.deviceCode || ""} 
                                 onChange={(e) => setSelectedGarden({...selectedGarden, deviceCode: e.target.value})}
                             />
-                            <Form.Text className="text-muted small">Must match your hardware ID to receive data.</Form.Text>
                         </Form.Group>
+
                         <Row>
-                            <Col md={6}>
+                            {/* Plant Type - Đã thêm lại ở đây */}
+                            <Col md={12}>
                                 <Form.Group className="mb-3">
                                     <Form.Label className="small fw-bold">Plant Type</Form.Label>
-                                    <Form.Select value={selectedGarden.plantId} onChange={(e) => setSelectedGarden({...selectedGarden, plantId: e.target.value})}>
-                                        <option value="">Select...</option>
+                                    <Form.Select 
+                                        value={selectedGarden.plantId || ""} 
+                                        onChange={(e) => setSelectedGarden({...selectedGarden, plantId: e.target.value})}
+                                    >
+                                        <option value="">Select a plant...</option>
                                         {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
+                        </Row>
+
+                        <Row>
+                            {/* Irrigation Mode */}
                             <Col md={6}>
                                 <Form.Group className="mb-3">
                                     <Form.Label className="small fw-bold">Irrigation Mode</Form.Label>
@@ -205,11 +274,61 @@ const Garden = ({ isSidebarOpen }) => {
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
+
+                            {/* LED Mode - ledAutoMode trong DB là Boolean */}
+                            <Col md={6}>
+                                <Form.Group className="mb-3">
+                                    <Form.Label className="small fw-bold">LED Mode</Form.Label>
+                                    <Form.Select 
+                                        value={selectedGarden.ledAutoMode ? "true" : "false"} 
+                                        onChange={(e) => setSelectedGarden({...selectedGarden, ledAutoMode: e.target.value === "true"})}
+                                    >
+                                        <option value="false">Manual</option>
+                                        <option value="true">Auto</option>
+                                    </Form.Select>
+                                </Form.Group>
+                            </Col>
                         </Row>
+
+                        {/* Input cho Threshold và Duration khi chọn Auto */}
+                        {selectedGarden.irrigationMode === 'auto' && (
+                            <div className="p-3 mb-3 border rounded bg-light shadow-sm">
+                                <Row>
+                                    <Col md={6}>
+                                        <Form.Group>
+                                            <Form.Label className="small fw-bold text-primary">Threshold (%)</Form.Label>
+                                            <Form.Control 
+                                                type="number" 
+                                                placeholder="e.g. 30"
+                                                value={selectedGarden.autoIrrigationThreshold || ""}
+                                                onChange={(e) => setSelectedGarden({...selectedGarden, autoIrrigationThreshold: e.target.value})}
+                                            />
+                                        </Form.Group>
+                                    </Col>
+                                    <Col md={6}>
+                                        <Form.Group>
+                                            <Form.Label className="small fw-bold text-warning">Duration (s)</Form.Label>
+                                            <Form.Control 
+                                                type="number" 
+                                                placeholder="e.g. 60"
+                                                value={selectedGarden.autoIrrigationDuration || ""}
+                                                onChange={(e) => setSelectedGarden({...selectedGarden, autoIrrigationDuration: e.target.value})}
+                                            />
+                                        </Form.Group>
+                                    </Col>
+                                </Row>
+                            </div>
+                        )}
+
+                        {/* Description */}
                         <Form.Group className="mb-3">
                             <Form.Label className="small fw-bold">Description</Form.Label>
-                            <Form.Control as="textarea" rows={3} value={selectedGarden.description}
-                                onChange={(e) => setSelectedGarden({...selectedGarden, description: e.target.value})} />
+                            <Form.Control 
+                                as="textarea" 
+                                rows={2} 
+                                value={selectedGarden.description}
+                                onChange={(e) => setSelectedGarden({...selectedGarden, description: e.target.value})} 
+                            />
                         </Form.Group>
                     </Form>
                 </Modal.Body>
