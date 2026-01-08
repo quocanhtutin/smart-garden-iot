@@ -82,17 +82,29 @@ const Sensor = ({ isSidebarOpen }) => {
             console.log(" Đã cập nhật UI cho vườn:", currentId);
         });
 
+        // socket.on("device:status", (statusData) => {
+        //     console.log("📱 Trạng thái thiết bị thay đổi:", statusData);
+        //     if (Number(statusData.gardenId) === currentId) {
+        //         setLatestSensor(prev => ({ ...prev, ...statusData }));
+        //     }
+        // });
+
+        // socket.onAny((eventName, payload) => {
+        //     if (eventName !== "connect") {
+        //         loadInitialData();
+        //         console.log(`🔍 Server đang phát sự kiện tên là: [${eventName}]`, payload);
+        //     }
+        // });
+               
         socket.on("device:status", (statusData) => {
             console.log("📱 Trạng thái thiết bị thay đổi:", statusData);
             if (Number(statusData.gardenId) === currentId) {
-                setLatestSensor(prev => ({ ...prev, ...statusData }));
-            }
-        });
-
-        socket.onAny((eventName, payload) => {
-            if (eventName !== "connect") {
-                loadInitialData();
-                console.log(`🔍 Server đang phát sự kiện tên là: [${eventName}]`, payload);
+                // Cập nhật ngay lập tức trạng thái LED và Bơm vào state
+                setLatestSensor(prev => ({ 
+                    ...prev, 
+                    isLedOn: statusData.isLedOn, 
+                    isPumpOn: statusData.isPumpOn 
+                }));
             }
         });
 
@@ -130,22 +142,47 @@ const Sensor = ({ isSidebarOpen }) => {
         }
     };
 
+    // const handleDeviceControl = async (device, currentStatus) => {
+    //     try {
+    //         setActionLoading(true);
+    //         const newStatus = !currentStatus;
+            
+    //         if (device === 'pump') {
+    //             if (newStatus) {
+    //                 // Khi BẬT thì gửi kèm thời gian
+    //                 await turnOnPump(id, pumpDuration); 
+    //                 toast.info(`Sending ON command for ${pumpDuration}s...`);
+    //             } else {
+    //                 await turnOffPump(id);
+    //             }
+    //         } else {
+    //             newStatus ? await turnOnLED(id) : await turnOffLED(id);
+    //         }
+    //     } catch (e) {
+    //         toast.error(e.response?.data?.message || `Control command failed`);
+    //     } finally {
+    //         setActionLoading(false);
+    //     }
+    // };
+    
     const handleDeviceControl = async (device, currentStatus) => {
         try {
             setActionLoading(true);
             const newStatus = !currentStatus;
             
             if (device === 'pump') {
-                if (newStatus) {
-                    // Khi BẬT thì gửi kèm thời gian
-                    await turnOnPump(id, pumpDuration); 
-                    toast.info(`Sending ON command for ${pumpDuration}s...`);
-                } else {
-                    await turnOffPump(id);
-                }
+                newStatus ? await turnOnPump(id, pumpDuration) : await turnOffPump(id);
             } else {
                 newStatus ? await turnOnLED(id) : await turnOffLED(id);
             }
+
+            // CẬP NHẬT NGAY LẬP TỨC (Optimistic Update)
+            setLatestSensor(prev => ({
+                ...prev,
+                [device === 'pump' ? 'isPumpOn' : 'isLedOn']: newStatus
+            }));
+
+            toast.success(`${device.toUpperCase()} turned ${newStatus ? 'ON' : 'OFF'}`);
         } catch (e) {
             toast.error(e.response?.data?.message || `Control command failed`);
         } finally {
@@ -178,6 +215,20 @@ const Sensor = ({ isSidebarOpen }) => {
         }
     };
 
+    const handleSwitchLedMode = async (isAuto) => {
+        if (!garden) return;
+        try {
+            setActionLoading(true);
+            await updateGarden(id, { ledAutoMode: isAuto }); // Gửi boolean true/false
+            setGarden(prev => ({ ...prev, ledAutoMode: isAuto }));
+            toast.success(`LED mode updated to ${isAuto ? 'AUTO' : 'MANUAL'}`);
+        } catch (e) {
+            toast.error("Failed to switch LED mode");
+        } finally {
+            setActionLoading(false);
+        }
+    };
+    
     if (loading) {
         return (
             <div className="d-flex justify-content-center align-items-center vh-100">
@@ -267,9 +318,9 @@ const Sensor = ({ isSidebarOpen }) => {
                                 
                                 <ControlSwitch 
                                     label="Grow Lights" icon="sun-o" color="warning"
-                                    active={latestSensor?.isLedOn}
-                                    loading={actionLoading}
+                                    active={latestSensor?.isLedOn} loading={actionLoading}
                                     onToggle={() => handleDeviceControl('led', latestSensor?.isLedOn)}
+                                    isAutoMode={garden?.ledAutoMode} // Truyền trạng thái auto để hiển thị label
                                 />
                                 <div className="mt-4 p-3 bg-light rounded-3 border">
                                     <div className="d-flex justify-content-between x-small fw-bold mb-2 text-muted uppercase">
@@ -283,7 +334,7 @@ const Sensor = ({ isSidebarOpen }) => {
                                         style={{height: '4px'}} 
                                         className="mb-3"
                                     />
-                                    <div className="pt-2 border-top">
+                                    <div className="pt-2 pb-2 border-top">
                                         <div className="d-flex align-items-center justify-content-between">
                                             <span className="x-small fw-bold text-muted uppercase">Irrigation Mode</span>
                                             <div className="btn-group shadow-sm" style={{ borderRadius: '20px', overflow: 'hidden' }}>
@@ -303,6 +354,31 @@ const Sensor = ({ isSidebarOpen }) => {
                                                     className="x-small border-0 px-3"
                                                     onClick={() => garden?.irrigationMode !== 'auto' && handleSwitchMode('auto')}
                                                     disabled={actionLoading}
+                                                    style={{ fontSize: '11px', fontWeight: 'bold' }}
+                                                >
+                                                    AUTO
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="pt-2 border-top">
+                                        <div className="d-flex align-items-center justify-content-between">
+                                            <span className="x-small fw-bold text-muted uppercase">LED Mode</span>
+                                            <div className="btn-group shadow-sm" style={{ borderRadius: '20px', overflow: 'hidden' }}>
+                                                <Button 
+                                                    variant={garden?.ledAutoMode === false ? "primary" : "white"} 
+                                                    size="sm" 
+                                                    className="x-small px-3 border-0"
+                                                    onClick={() => handleSwitchLedMode(false)} 
+                                                    style={{ fontSize: '11px', fontWeight: 'bold' }}
+                                                >
+                                                    MANUAL
+                                                </Button>
+                                                <Button 
+                                                    variant={garden?.ledAutoMode === true ? "primary" : "white"} 
+                                                    size="sm" 
+                                                    className="x-small px-3 border-0"
+                                                    onClick={() => handleSwitchLedMode(true)} 
                                                     style={{ fontSize: '11px', fontWeight: 'bold' }}
                                                 >
                                                     AUTO
