@@ -3,7 +3,7 @@ package com.example.iotapplication.data.model.garden
 data class Device (
     val id: Int,
     val deviceCode: String,
-    val temperature: Int?,
+    val temperature: Double?,
     val airHumidity: Int?,
     val soilMoisture: Int?,
     val isDark: Boolean,
