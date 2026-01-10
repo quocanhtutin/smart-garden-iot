@@ -2,14 +2,14 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Container, Row, Col, Card, Button, Table, Spinner, Badge, ProgressBar } from "react-bootstrap";
 import { io } from "socket.io-client";
-import { 
-    fetchGardenById, 
-    fetchSensorLatest, 
-    fetchSensorLog, 
-    turnOnPump, 
-    turnOffPump, 
-    turnOnLED, 
-    turnOffLED, updateGarden 
+import {
+    fetchGardenById,
+    fetchRealtimeGarden,
+    fetchSensorLog,
+    turnOnPump,
+    turnOffPump,
+    turnOnLED,
+    turnOffLED, updateGarden
 } from "../../services/UserServices";
 import { toast } from "react-toastify";
 import "./Sensor.scss";
@@ -18,7 +18,7 @@ const Sensor = ({ isSidebarOpen }) => {
     const { id } = useParams();
     const navigate = useNavigate();
     const socketRef = useRef(null);
-    
+
     const [garden, setGarden] = useState(null);
     const [latestSensor, setLatestSensor] = useState(null);
     const [logs, setLogs] = useState([]);
@@ -32,14 +32,25 @@ const Sensor = ({ isSidebarOpen }) => {
     const loadInitialData = useCallback(async (showLoading = true) => {
         try {
             if (showLoading) setLoading(true);
-            const [gardenRes, latestRes, logsRes] = await Promise.all([
+            const [gardenRes, statusRes, logsRes] = await Promise.all([
                 fetchGardenById(id),
-                fetchSensorLatest(id),
+                fetchRealtimeGarden(id),  // Lấy từ Device table thay vì SensorLog
                 fetchSensorLog(id)
             ]);
-            
+
             setGarden(gardenRes.data?.data || gardenRes.data);
-            setLatestSensor(latestRes.data?.data[0]);
+            // Lấy sensor data từ Device table
+            const deviceData = statusRes.data?.data?.device || statusRes.data?.device;
+            if (deviceData) {
+                setLatestSensor({
+                    temperature: deviceData.sensors?.temperature,
+                    airHumidity: deviceData.sensors?.airHumidity,
+                    soilMoisture: deviceData.sensors?.soilMoisture,
+                    isDark: deviceData.sensors?.isDark,
+                    isPumpOn: deviceData.isPumpOn,
+                    isLedOn: deviceData.isLedOn
+                });
+            }
             setLogs(logsRes.data?.data || logsRes.data || []);
         } catch (e) {
             toast.error("Failed to sync with garden sensors");
@@ -52,7 +63,7 @@ const Sensor = ({ isSidebarOpen }) => {
         loadInitialData();
     }, [loadInitialData]);
 
-    
+
     useEffect(() => {
         const socket = io("http://localhost:3000", {
             transports: ["websocket", "polling"],
@@ -69,7 +80,14 @@ const Sensor = ({ isSidebarOpen }) => {
 
         socket.on("sensor:update", (newData) => {
             console.log("Nhận dữ liệu Sensor real-time:", newData);
-            setLatestSensor(newData);
+            // Cập nhật sensor data từ Device table, giữ nguyên trạng thái pump/LED
+            setLatestSensor(prev => ({
+                ...prev,
+                temperature: newData.temperature,
+                airHumidity: newData.airHumidity,
+                soilMoisture: newData.soilMoisture,
+                isDark: newData.isDark
+            }));
             setLogs(prevLogs => {
                 const logEntry = {
                     ...newData,
@@ -95,15 +113,15 @@ const Sensor = ({ isSidebarOpen }) => {
         //         console.log(`🔍 Server đang phát sự kiện tên là: [${eventName}]`, payload);
         //     }
         // });
-               
+
         socket.on("device:status", (statusData) => {
             console.log("📱 Trạng thái thiết bị thay đổi:", statusData);
             if (Number(statusData.gardenId) === currentId) {
                 // Cập nhật ngay lập tức trạng thái LED và Bơm vào state
-                setLatestSensor(prev => ({ 
-                    ...prev, 
-                    isLedOn: statusData.isLedOn, 
-                    isPumpOn: statusData.isPumpOn 
+                setLatestSensor(prev => ({
+                    ...prev,
+                    isLedOn: statusData.isLedOn,
+                    isPumpOn: statusData.isPumpOn
                 }));
             }
         });
@@ -130,7 +148,7 @@ const Sensor = ({ isSidebarOpen }) => {
     const handleUpdateAutoSettings = async () => {
         try {
             setActionLoading(true);
-            await updateGarden(id, { 
+            await updateGarden(id, {
                 autoIrrigationThreshold: Number(threshold),
                 autoIrrigationDuration: Number(autoDuration) // Gửi kèm thời gian tưới
             });
@@ -146,7 +164,7 @@ const Sensor = ({ isSidebarOpen }) => {
     //     try {
     //         setActionLoading(true);
     //         const newStatus = !currentStatus;
-            
+
     //         if (device === 'pump') {
     //             if (newStatus) {
     //                 // Khi BẬT thì gửi kèm thời gian
@@ -164,12 +182,12 @@ const Sensor = ({ isSidebarOpen }) => {
     //         setActionLoading(false);
     //     }
     // };
-    
+
     const handleDeviceControl = async (device, currentStatus) => {
         try {
             setActionLoading(true);
             const newStatus = !currentStatus;
-            
+
             if (device === 'pump') {
                 newStatus ? await turnOnPump(id, pumpDuration) : await turnOffPump(id);
             } else {
@@ -203,7 +221,7 @@ const Sensor = ({ isSidebarOpen }) => {
             };
 
             await updateGarden(id, payload);
-            
+
             // Cập nhật lại state local để UI thay đổi ngay lập tức
             setGarden(prev => ({ ...prev, irrigationMode: newMode }));
             toast.success(`Switched to ${newMode.toUpperCase()} mode!`);
@@ -228,7 +246,7 @@ const Sensor = ({ isSidebarOpen }) => {
             setActionLoading(false);
         }
     };
-    
+
     if (loading) {
         return (
             <div className="d-flex justify-content-center align-items-center vh-100">
@@ -268,18 +286,18 @@ const Sensor = ({ isSidebarOpen }) => {
 
                 {/* Main Stats */}
                 <Row className="g-4 mb-4">
-                    <SensorMetricCard 
-                        icon="thermometer-half" color="danger" label="Temperature" 
+                    <SensorMetricCard
+                        icon="thermometer-half" color="danger" label="Temperature"
                         value={latestSensor?.temperature} unit="°C"
                         subtext="Ambient temp"
                     />
-                    <SensorMetricCard 
-                        icon="tint" color="primary" label="Air Humidity" 
-                        value={latestSensor?.airHumidity} unit="%" 
+                    <SensorMetricCard
+                        icon="tint" color="primary" label="Air Humidity"
+                        value={latestSensor?.airHumidity} unit="%"
                         subtext="Atmospheric moisture"
                     />
-                    <SensorMetricCard 
-                        icon="leaf" color="success" label="Soil Moisture" 
+                    <SensorMetricCard
+                        icon="leaf" color="success" label="Soil Moisture"
                         value={latestSensor?.soilMoisture} unit="%"
                         subtext={`Auto-water threshold: ${garden?.autoIrrigationThreshold}%`}
                     />
@@ -294,16 +312,16 @@ const Sensor = ({ isSidebarOpen }) => {
                             </div>
                             <Card.Body className="p-4">
                                 {garden?.irrigationMode === 'auto' ? (
-                                    <AutoThresholdControl 
-                                    threshold={threshold}
-                                    setThreshold={setThreshold}
-                                    duration={autoDuration}
-                                    setDuration={setAutoDuration}
-                                    onUpdate={handleUpdateAutoSettings}
-                                    loading={actionLoading}
-                                />
+                                    <AutoThresholdControl
+                                        threshold={threshold}
+                                        setThreshold={setThreshold}
+                                        duration={autoDuration}
+                                        setDuration={setAutoDuration}
+                                        onUpdate={handleUpdateAutoSettings}
+                                        loading={actionLoading}
+                                    />
                                 ) : (
-                                    <ControlSwitch 
+                                    <ControlSwitch
                                         label="Water Pump" icon="tint" color="info"
                                         active={latestSensor?.isPumpOn}
                                         loading={actionLoading}
@@ -315,8 +333,8 @@ const Sensor = ({ isSidebarOpen }) => {
                                 )}
 
                                 <hr className="my-4" />
-                                
-                                <ControlSwitch 
+
+                                <ControlSwitch
                                     label="Grow Lights" icon="sun-o" color="warning"
                                     active={latestSensor?.isLedOn} loading={actionLoading}
                                     onToggle={() => handleDeviceControl('led', latestSensor?.isLedOn)}
@@ -327,19 +345,19 @@ const Sensor = ({ isSidebarOpen }) => {
                                         <span>Current Status</span>
                                         <span>{latestSensor?.isPumpOn ? 'Irrigating...' : 'Standby'}</span>
                                     </div>
-                                    <ProgressBar 
-                                        animated={latestSensor?.isPumpOn} 
-                                        variant={latestSensor?.isPumpOn ? "info" : "success"} 
-                                        now={100} 
-                                        style={{height: '4px'}} 
+                                    <ProgressBar
+                                        animated={latestSensor?.isPumpOn}
+                                        variant={latestSensor?.isPumpOn ? "info" : "success"}
+                                        now={100}
+                                        style={{ height: '4px' }}
                                         className="mb-3"
                                     />
                                     <div className="pt-2 pb-2 border-top">
                                         <div className="d-flex align-items-center justify-content-between">
                                             <span className="x-small fw-bold text-muted uppercase">Irrigation Mode</span>
                                             <div className="btn-group shadow-sm" style={{ borderRadius: '20px', overflow: 'hidden' }}>
-                                                <Button 
-                                                    variant={garden?.irrigationMode === 'manual' ? "primary" : "white"} 
+                                                <Button
+                                                    variant={garden?.irrigationMode === 'manual' ? "primary" : "white"}
                                                     size="sm"
                                                     className="x-small border-0 px-3"
                                                     onClick={() => garden?.irrigationMode !== 'manual' && handleSwitchMode('manual')}
@@ -348,8 +366,8 @@ const Sensor = ({ isSidebarOpen }) => {
                                                 >
                                                     MANUAL
                                                 </Button>
-                                                <Button 
-                                                    variant={garden?.irrigationMode === 'auto' ? "primary" : "white"} 
+                                                <Button
+                                                    variant={garden?.irrigationMode === 'auto' ? "primary" : "white"}
                                                     size="sm"
                                                     className="x-small border-0 px-3"
                                                     onClick={() => garden?.irrigationMode !== 'auto' && handleSwitchMode('auto')}
@@ -365,20 +383,20 @@ const Sensor = ({ isSidebarOpen }) => {
                                         <div className="d-flex align-items-center justify-content-between">
                                             <span className="x-small fw-bold text-muted uppercase">LED Mode</span>
                                             <div className="btn-group shadow-sm" style={{ borderRadius: '20px', overflow: 'hidden' }}>
-                                                <Button 
-                                                    variant={garden?.ledAutoMode === false ? "primary" : "white"} 
-                                                    size="sm" 
+                                                <Button
+                                                    variant={garden?.ledAutoMode === false ? "primary" : "white"}
+                                                    size="sm"
                                                     className="x-small px-3 border-0"
-                                                    onClick={() => handleSwitchLedMode(false)} 
+                                                    onClick={() => handleSwitchLedMode(false)}
                                                     style={{ fontSize: '11px', fontWeight: 'bold' }}
                                                 >
                                                     MANUAL
                                                 </Button>
-                                                <Button 
-                                                    variant={garden?.ledAutoMode === true ? "primary" : "white"} 
-                                                    size="sm" 
+                                                <Button
+                                                    variant={garden?.ledAutoMode === true ? "primary" : "white"}
+                                                    size="sm"
                                                     className="x-small px-3 border-0"
-                                                    onClick={() => handleSwitchLedMode(true)} 
+                                                    onClick={() => handleSwitchLedMode(true)}
                                                     style={{ fontSize: '11px', fontWeight: 'bold' }}
                                                 >
                                                     AUTO
@@ -419,8 +437,8 @@ const Sensor = ({ isSidebarOpen }) => {
                                                     <td><span className="fw-bold text-primary">{log.airHumidity || log.airHumidity}%</span></td>
                                                     <td><span className="fw-bold text-success">{log.soilMoisture}%</span></td>
                                                     <td>
-                                                        <Badge 
-                                                            bg={log.isDark ? "dark" : "warning"} 
+                                                        <Badge
+                                                            bg={log.isDark ? "dark" : "warning"}
                                                             className={`text-${log.isDark ? "white" : "dark"} border`}
                                                         >
                                                             {log.isDark ? "Dark" : "Light"}
@@ -471,13 +489,13 @@ const ControlSwitch = ({ label, icon, active, color, onToggle, loading, showInpu
                 </div>
             </div>
         </div>
-        
+
         <div className="d-flex align-items-center gap-2">
             {/* Nếu là máy bơm và đang tắt, cho phép nhập thời gian */}
             {showInput && !active && (
                 <div className="d-flex align-items-center border rounded-pill px-2 bg-white">
-                    <input 
-                        type="number" 
+                    <input
+                        type="number"
                         value={duration}
                         onChange={(e) => setDuration(Number(e.target.value))}
                         style={{ width: '50px', border: 'none', textAlign: 'center', outline: 'none', fontSize: '12px' }}
@@ -485,9 +503,9 @@ const ControlSwitch = ({ label, icon, active, color, onToggle, loading, showInpu
                     <span className="text-muted small">s</span>
                 </div>
             )}
-            
-            <Button 
-                variant={active ? color : "outline-secondary"} 
+
+            <Button
+                variant={active ? color : "outline-secondary"}
                 className="rounded-pill px-3 btn-sm shadow-sm"
                 onClick={onToggle}
                 disabled={loading}
@@ -520,8 +538,8 @@ const AutoThresholdControl = ({ threshold, setThreshold, duration, setDuration, 
             <div className="d-flex gap-2">
                 {/* Ngưỡng % */}
                 <div className="d-flex align-items-center border rounded-pill px-2 bg-white shadow-sm" style={{ height: '32px' }}>
-                    <input 
-                        type="number" 
+                    <input
+                        type="number"
                         value={threshold}
                         onChange={(e) => setThreshold(Number(e.target.value))}
                         className="border-0 text-center fw-bold text-primary p-0"
@@ -532,8 +550,8 @@ const AutoThresholdControl = ({ threshold, setThreshold, duration, setDuration, 
 
                 {/* Thời gian s */}
                 <div className="d-flex align-items-center border rounded-pill px-2 bg-white shadow-sm" style={{ height: '32px' }}>
-                    <input 
-                        type="number" 
+                    <input
+                        type="number"
                         value={duration}
                         onChange={(e) => setDuration(Number(e.target.value))}
                         className="border-0 text-center fw-bold text-warning p-0"
@@ -545,8 +563,8 @@ const AutoThresholdControl = ({ threshold, setThreshold, duration, setDuration, 
         </div>
 
         {/* Hàng 2: Nút Send */}
-        <Button 
-            variant="primary" 
+        <Button
+            variant="primary"
             className="w-100 rounded-pill shadow-sm d-flex align-items-center justify-content-center"
             onClick={onUpdate}
             disabled={loading}

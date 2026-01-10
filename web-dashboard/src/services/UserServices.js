@@ -97,15 +97,15 @@ const turnOnPump = (id, duration) => {
 };
 
 const turnOffPump = (id) => {
-    return axios.post(`/api/gardens/${id}/pump/off`);
+    return axios.post(`/api/gardens/${id}/pump/off`, {});
 };
 
 const turnOnLED = (id) => {
-    return axios.post(`/api/gardens/${id}/led/on`);
+    return axios.post(`/api/gardens/${id}/led/on`, {});
 };
 
 const turnOffLED = (id) => {
-    return axios.post(`/api/gardens/${id}/led/off`);
+    return axios.post(`/api/gardens/${id}/led/off`, {});
 };
 
 const fetchRealtimeGarden = (id) => {
@@ -160,21 +160,21 @@ const fetchIrrigationStatistics = (id) => {
     return axios.get(`/api/gardens/${id}/irrigation/statistics`);
 };
 
-export { 
-    login, 
-    registerAccount, 
-    logout, 
-    refresh, 
-    fetchMe, 
-    fetchProfile, 
-    updateProfile, 
-    changePassword, 
-    fetchAllUsers, 
-    statisticsUsers, 
-    addNewUsersAdmin, 
-    fetchUserAdmin, 
-    updateUserAdmin, 
-    deleteUserAdmin ,
+export {
+    login,
+    registerAccount,
+    logout,
+    refresh,
+    fetchMe,
+    fetchProfile,
+    updateProfile,
+    changePassword,
+    fetchAllUsers,
+    statisticsUsers,
+    addNewUsersAdmin,
+    fetchUserAdmin,
+    updateUserAdmin,
+    deleteUserAdmin,
     fetchAllDevices,
     fetchDeviceById,
     fetchDeviceByCode,
@@ -187,7 +187,7 @@ export {
     turnOnPump,
     turnOffPump,
     turnOffLED,
-    turnOnLED, 
+    turnOnLED,
     fetchRealtimeGarden,
     createNewPlant,
     fetchPlants,
