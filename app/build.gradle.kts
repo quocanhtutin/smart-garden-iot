@@ -60,6 +60,7 @@ dependencies {
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.benchmark.traceprocessor)
     implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.foundation.layout)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

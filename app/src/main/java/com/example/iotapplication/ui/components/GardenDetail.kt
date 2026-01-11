@@ -3,6 +3,7 @@ package com.example.iotapplication.ui.components
 import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.benchmark.traceprocessor.Row
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Remove
@@ -41,17 +43,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
 import com.example.iotapplication.data.model.garden.DeviceStatus
 import com.example.iotapplication.data.model.garden.GardenDetail
+import com.example.iotapplication.data.model.garden.SensorLog
 import com.example.iotapplication.data.remote.api.ApiService
 import com.example.iotapplication.ui.viewmodel.GardenSensorViewModel
 import com.example.iotapplication.ui.viewmodel.GardenSensorViewModelFactory
 import com.example.iotapplication.ui.viewmodel.GardenViewModel
+import java.lang.System.console
+import java.time.LocalDate
+import java.time.OffsetDateTime
 
 @Composable
 fun GardenHeaderSection(
@@ -234,7 +243,8 @@ fun IrrigationSection(
     pumpError: String?,
     onSaveAuto: (String, Int?, Int?, Int?) -> Unit,
     onPumpOn: (Int) -> Unit,
-    onPumpOff: () -> Unit
+    onPumpOff: () -> Unit,
+    navController: NavHostController
 ) {
     var mode by remember { mutableStateOf(garden.irrigationMode) }
     var threshold by remember { mutableIntStateOf(garden.autoIrrigationThreshold ?: 0) }
@@ -244,7 +254,20 @@ fun IrrigationSection(
     var manualDuration by remember { mutableIntStateOf(60) }
 
     Column {
-        Text("Chế độ tưới", fontWeight = FontWeight.Bold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Chế độ tưới", fontWeight = FontWeight.Bold)
+
+            IconButton(onClick = {
+                navController.navigate("irrigation-history/${garden.id}")
+            }) {
+                Icon(Icons.Default.History, contentDescription = "Lịch sử tưới")
+            }
+        }
+
 
         DropdownMenuBox(
             options = listOf("manual", "auto", "scheduled"),
@@ -370,8 +393,8 @@ fun LedToggleSection(
             if (error != null) {
                 Text(
                     text = error,
-                    color = Color.Red,
-                    modifier = Modifier.padding(top = 4.dp)
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp
                 )
 
                 // rollback UI
@@ -417,12 +440,14 @@ fun AlertThresholdSection(
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun SensorCard(
     title: String,
     value: String,
     expanded: Boolean,
-    logs: List<Double>,
+    selector: (SensorLog) -> Double?,
+    logs: List<SensorLog>,
     min: Double?,
     max: Double?,
     onClick: () -> Unit
@@ -441,13 +466,17 @@ fun SensorCard(
         }
 
         if (expanded) {
-            SimpleLineChart(logs)
+            SensorLineChart(
+                logs = logs,
+                selector = selector
+            )
 
             Spacer(Modifier.height(8.dp))
 
             Text("Min: ${min ?: "--"}")
             Text("Max: ${max ?: "--"}")
         }
+
     }
 }
 
@@ -475,6 +504,7 @@ fun SensorStatusSection(
 
     val status = viewModel.status ?: return
 
+
     val device = status.device
     if (device == null) {
         Text(
@@ -493,7 +523,8 @@ fun SensorStatusSection(
             title = "Nhiệt độ",
             value = "${sensors.temperature ?: "--"} °C",
             expanded = viewModel.expandedSensor == "temp",
-            logs = viewModel.logs.mapNotNull { it.temperature },
+            selector = { it.temperature },
+            logs = viewModel.logs,
             min = viewModel.statistics?.minTemperature,
             max = viewModel.statistics?.maxTemperature
         ) {
@@ -504,7 +535,8 @@ fun SensorStatusSection(
             title = "Độ ẩm không khí",
             value = "${sensors.airHumidity ?: "--"} %",
             expanded = viewModel.expandedSensor == "air",
-            logs = viewModel.logs.mapNotNull { it.airHumidity },
+            selector = { it.airHumidity },
+            logs = viewModel.logs,
             min = null,
             max = null
         ) {
@@ -515,7 +547,8 @@ fun SensorStatusSection(
             title = "Độ ẩm đất",
             value = "${sensors.soilMoisture ?: "--"} %",
             expanded = viewModel.expandedSensor == "soil",
-            logs = viewModel.logs.mapNotNull { it.soilMoisture },
+            selector = { it.soilMoisture },
+            logs = viewModel.logs,
             min = viewModel.statistics?.minSoilMoisture,
             max = viewModel.statistics?.maxSoilMoisture
         ) {
@@ -523,6 +556,185 @@ fun SensorStatusSection(
         }
     }
 }
+
+@RequiresApi(Build.VERSION_CODES.O)
+fun averagePerDay(
+    logs: List<SensorLog>,
+    selector: (SensorLog) -> Double?
+): List<Pair<LocalDate, Double>> {
+
+    return logs
+        .mapNotNull { log ->
+            val value = selector(log)
+            if (value != null) {
+                val date = OffsetDateTime.parse(log.createdAt).toLocalDate()
+                date to value
+            } else null
+        }
+        .groupBy { it.first }
+        .mapValues { entry ->
+            entry.value.map { it.second }.average()
+        }
+        .toList()
+        .sortedBy { it.first }
+        .takeLast(7)
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
+@Composable
+fun LineChart7Days(
+    data: List<Pair<LocalDate, Double>>,
+    modifier: Modifier = Modifier
+        .fillMaxWidth()
+        .height(220.dp)
+) {
+    if (data.isEmpty()) {
+        Text("Không có dữ liệu")
+        return
+    }
+
+    val values = data.map { it.second }
+
+    val max = values.maxOrNull() ?: 1.0
+    val min = values.minOrNull() ?: 0.0
+
+    // mở rộng biên để line nằm giữa
+    val paddingValue = (max - min) * 0.1
+    val chartMax = max + paddingValue
+    val chartMin = min - paddingValue
+    val range = (chartMax - chartMin).takeIf { it > 0 } ?: 1.0
+
+    val textPaint = android.graphics.Paint().apply {
+        color = android.graphics.Color.DKGRAY
+        textSize = 28f
+        isAntiAlias = true
+    }
+
+    Canvas(modifier = modifier.padding(16.dp)) {
+
+        val leftPadding = 80f
+        val bottomPadding = 60f
+        val topPadding = 20f
+
+        val chartWidth = size.width - leftPadding
+        val chartHeight = size.height - bottomPadding - topPadding
+
+        val stepX = chartWidth / (data.size - 1).coerceAtLeast(1)
+
+        fun valueToY(value: Double): Float {
+            return topPadding + chartHeight -
+                    ((value - chartMin) / range * chartHeight).toFloat()
+        }
+
+        val points = data.mapIndexed { index, pair ->
+            Offset(
+                x = leftPadding + stepX * index,
+                y = valueToY(pair.second)
+            )
+        }
+
+        /* ===== Trục Y ===== */
+        drawLine(
+            color = Color.Gray,
+            start = Offset(leftPadding, topPadding),
+            end = Offset(leftPadding, topPadding + chartHeight),
+            strokeWidth = 2f
+        )
+
+        // chia trục Y (4 mốc)
+        val ySteps = 4
+        for (i in 0..ySteps) {
+            val value = chartMin + range / ySteps * i
+            val y = valueToY(value)
+
+            drawLine(
+                color = Color.LightGray,
+                start = Offset(leftPadding, y),
+                end = Offset(size.width, y),
+                strokeWidth = 1f
+            )
+
+            drawContext.canvas.nativeCanvas.drawText(
+                String.format("%.1f", value),
+                0f,
+                y + 8f,
+                textPaint
+            )
+        }
+
+        /* ===== Trục X ===== */
+        drawLine(
+            color = Color.Gray,
+            start = Offset(leftPadding, topPadding + chartHeight),
+            end = Offset(size.width, topPadding + chartHeight),
+            strokeWidth = 2f
+        )
+
+        data.forEachIndexed { index, pair ->
+            val x = leftPadding + stepX * index
+            val label = pair.first.dayOfMonth.toString()
+
+            drawContext.canvas.nativeCanvas.drawText(
+                label,
+                x - 14f,
+                size.height,
+                textPaint
+            )
+        }
+
+        /* ===== Line ===== */
+        for (i in 0 until points.lastIndex) {
+            drawLine(
+                color = Color(0xFF4CAF50),
+                start = points[i],
+                end = points[i + 1],
+                strokeWidth = 4f
+            )
+        }
+
+        /* ===== Point + value ===== */
+        points.forEachIndexed { index, point ->
+            drawCircle(
+                color = Color(0xFF2E7D32),
+                radius = 6f,
+                center = point
+            )
+
+            drawContext.canvas.nativeCanvas.drawText(
+                String.format("%.1f", data[index].second),
+                point.x - 20,
+                point.y - 12,
+                textPaint
+            )
+        }
+    }
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
+@Composable
+fun SensorLineChart(
+    logs: List<SensorLog>,
+    selector: (SensorLog) -> Double?
+) {
+
+
+    val dailyAverage = remember(logs, selector) {
+        averagePerDay(logs, selector)
+    }
+
+
+
+    Column {
+        Text(
+            "Biểu đồ trung bình 7 ngày",
+            style = MaterialTheme.typography.titleMedium
+        )
+        Spacer(Modifier.height(8.dp))
+        LineChart7Days(dailyAverage)
+    }
+}
+
+
 
 
 

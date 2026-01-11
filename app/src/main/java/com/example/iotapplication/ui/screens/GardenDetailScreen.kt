@@ -122,7 +122,8 @@ fun GardenDetailScreen(
                         )
                     },
                     onPumpOn = { viewModel.pumpOn(it) },
-                    onPumpOff = { viewModel.pumpOff() }
+                    onPumpOff = { viewModel.pumpOff() },
+                    navController = navController
                 )
             }
 

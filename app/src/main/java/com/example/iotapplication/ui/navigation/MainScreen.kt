@@ -138,7 +138,16 @@ fun AppMainNav(
                 navController = navController
             )
         }
-
+        composable(
+            route = "irrigation-history/{gardenId}",
+            arguments = listOf(navArgument("gardenId") { type = NavType.IntType })
+        ) {
+            IrrigationHistoryScreen(
+                gardenId = it.arguments!!.getInt("gardenId"),
+                api = api,
+                navController = navController
+            )
+        }
 
     }
 }

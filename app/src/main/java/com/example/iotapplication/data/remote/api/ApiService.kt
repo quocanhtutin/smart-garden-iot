@@ -5,6 +5,9 @@ import com.example.iotapplication.data.model.garden.DeviceStatus
 import com.example.iotapplication.data.model.garden.Garden
 import com.example.iotapplication.data.model.garden.GardenDetail
 import com.example.iotapplication.data.model.garden.GardenStatusResponse
+import com.example.iotapplication.data.model.garden.IrrigationLog
+import com.example.iotapplication.data.model.garden.IrrigationStatistics
+import com.example.iotapplication.data.model.garden.IrrigationStatus
 import com.example.iotapplication.data.model.garden.Plant
 import com.example.iotapplication.data.model.garden.SensorLog
 import com.example.iotapplication.data.model.garden.SensorStatistics
@@ -132,5 +135,26 @@ interface ApiService {
     suspend fun changePassword(
         @Body req: ChangePasswordRequest
     ): ApiResponse<Unit>
+
+    //irrigation
+    @GET("gardens/{gardenId}/irrigation/status")
+    suspend fun getIrrigationStatus(
+        @Path("gardenId") gardenId: Int
+    ): ApiResponse<IrrigationStatus>
+
+    @GET("gardens/{gardenId}/irrigation/logs")
+    suspend fun getIrrigationLogs(
+        @Path("gardenId") gardenId: Int,
+        @Query("from") from: String? = null,
+        @Query("to") to: String? = null,
+        @Query("limit") limit: Int = 100
+    ): ApiResponse<List<IrrigationLog>>
+
+    @GET("gardens/{gardenId}/irrigation/statistics")
+    suspend fun getIrrigationStatistics(
+        @Path("gardenId") gardenId: Int,
+        @Query("from") from: String,
+        @Query("to") to: String
+    ): ApiResponse<IrrigationStatistics>
 }
 
