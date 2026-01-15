@@ -86,7 +86,7 @@ data class SensorLog(
     val temperature: Double?,
     val airHumidity: Double?,
     val soilMoisture: Double?,
-    val createdAt: String
+    val recordedAt: String
 )
 
 data class SensorStatistics(

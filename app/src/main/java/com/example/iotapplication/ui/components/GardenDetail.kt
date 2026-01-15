@@ -567,7 +567,7 @@ fun averagePerDay(
         .mapNotNull { log ->
             val value = selector(log)
             if (value != null) {
-                val date = OffsetDateTime.parse(log.createdAt).toLocalDate()
+                val date = OffsetDateTime.parse(log.recordedAt).toLocalDate()
                 date to value
             } else null
         }
